@@ -186,6 +186,9 @@ $("status").textContent="Link copied! Once the site is published, it can be shar
 };
 try{
 if(location.hash.startsWith("#wish=")){
+  document.querySelector("header").hidden=true;
+document.querySelector("main .panel").hidden=true;
+document.querySelector(".layout").style.display="block";
 const raw=atob(location.hash.slice(6));
 const bytes=Uint8Array.from(raw,c=>c.charCodeAt(0));
 const d=JSON.parse(new TextDecoder().decode(bytes));
