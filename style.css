@@ -137,3 +137,11 @@ input:focus,textarea:focus{border-color:var(--a);box-shadow:0 0 0 4px color-mix(
 .music{right:16px;width:46px;height:46px;border-radius:50%;font-size:1.2rem}
 .back{left:16px;font:inherit;font-weight:600;padding:12px 18px;border-radius:99px}
 @media (prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;animation-iteration-count:1!important;animation-delay:0s!important}}
+/* sound button */
+.music{width:46px;height:46px;padding:0;display:flex;align-items:center;justify-content:center;gap:3px;border-radius:50%;font-size:0;box-shadow:0 8px 30px -10px var(--a);transition:transform .2s}
+.music:active{transform:scale(.92)}
+.music i{display:block;width:3px;height:16px;border-radius:3px;background:linear-gradient(var(--c),var(--b));animation:eq 1s ease-in-out infinite}
+.music i:nth-child(2){animation-delay:-.3s}.music i:nth-child(3){animation-delay:-.6s}.music i:nth-child(4){animation-delay:-.15s}
+.music[data-on="0"] i{animation:none;height:3px;opacity:.55;background:#fff}
+.music[data-on="0"]::after{content:"";position:absolute;inset:0;margin:auto;width:24px;height:2px;border-radius:2px;background:#fff;opacity:.85;transform:rotate(-45deg)}
+@keyframes eq{0%,100%{transform:scaleY(.25)}50%{transform:scaleY(1)}}
