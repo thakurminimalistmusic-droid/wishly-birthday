@@ -3,9 +3,9 @@
 const $ = (s, r = document) => r.querySelector(s);
 const app = $('#app');
 const THEMES = { neon: ['Neon', '#8b5cf6'], sunset: ['Sunset', '#fb923c'], mint: ['Mint', '#34d399'], bubble: ['Bubblegum', '#f472b6'], gold: ['Gold', '#fbbf24'] };
-const MAX_WORDS = 1000, MAX_AUDIO = 2.5 * 1024 * 1024;
-const form = { theme: 'neon', photo: '', audio: '', audioName: '', to: '', age: '', from: '', msg: '' };
-let audioEl = null;
+const MAX_WORDS = 1000;
+const form = { theme: 'neon', photo: '', audio: '', audioName: '', to: '', age: '', from: '', msg: '', yt: '', ys: '', ye: '' };
+let audioEl = null, yt = null, ytReady = null;
 
 /* ---------- helpers ---------- */
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -24,6 +24,14 @@ function shrink(src, max, q) {
     img.onload = () => { const r = Math.min(1, max / Math.max(img.width, img.height)); const c = document.createElement('canvas'); c.width = Math.round(img.width * r); c.height = Math.round(img.height * r); c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); ok(c.toDataURL('image/jpeg', q)); };
     img.onerror = no; img.src = src;
   });
+}
+
+const ytId = u => { const m = String(u || '').match(/(?:youtu\.be\/|v=|\/shorts\/|\/embed\/|\/live\/)([\w-]{11})/); return m ? m[1] : ''; };
+const toSec = v => { v = String(v || '').trim(); if (!v) return 0; const p = v.split(':').map(Number); if (p.some(isNaN)) return 0; return p.reduce((a, x) => a * 60 + x, 0); };
+function loadYT() {
+  if (ytReady) return ytReady;
+  ytReady = new Promise(ok => { if (window.YT && YT.Player) return ok(); const t = document.createElement('script'); t.src = 'https://www.youtube.com/iframe_api'; window.onYouTubeIframeAPIReady = ok; document.head.append(t); });
+  return ytReady;
 }
 
 /* cursor spotlight */
@@ -82,9 +90,13 @@ function showCreator() {
         <label class="f">Your name<input id="from" type="text" maxlength="40" placeholder="Your name" autocomplete="off"></label>
         <label class="f">Your wish <textarea id="msg" placeholder="Say the thing you never say out loud…"></textarea><span class="count" id="count">0 / ${MAX_WORDS} words</span></label>
         <label class="f">Vibe<div class="chips" id="chips"></div></label>
+        <label class="f">Song · YouTube link (optional)<input id="yt" type="text" inputmode="url" placeholder="https://youtu.be/..." autocomplete="off"></label>
+        <div class="row">
+          <label class="f">Start at<input id="ys" type="text" placeholder="0:45" autocomplete="off"></label>
+          <label class="f">Stop at<input id="ye" type="text" placeholder="1:20" autocomplete="off"></label>
+        </div>
         <div class="drops">
           <div class="drop" id="dropPhoto"></div>
-          <div class="drop" id="dropAudio"></div>
         </div>
         <div class="btns two">
           <button class="btn ghost" id="preview" type="button">Preview</button>
@@ -101,7 +113,7 @@ function showCreator() {
     b.onclick = () => { form.theme = k; setTheme(k); chips.querySelectorAll('.chip').forEach(c => c.setAttribute('aria-pressed', c === b)); };
     chips.append(b);
   });
-  ['to', 'age', 'from', 'msg'].forEach(id => {
+  ['to', 'age', 'from', 'msg', 'yt', 'ys', 'ye'].forEach(id => {
     const el = $('#' + id); el.value = form[id];
     el.addEventListener('input', () => { form[id] = el.value; if (id === 'msg') count(); mini(); });
   });
@@ -115,19 +127,23 @@ function mini() {
   m.innerHTML = `<div class="k">Happy birthday</div><div class="n">${esc(form.to || 'Name')}</div>${form.photo ? `<img class="ph" src="${form.photo}" alt="">` : ''}<div class="m">${esc(form.msg || 'Your wish shows up here as you type…')}</div>${form.from ? `<div class="fr">— ${esc(form.from)}</div>` : ''}`;
 }
 function drawDrops() {
-  const p = $('#dropPhoto'), a = $('#dropAudio');
+  const p = $('#dropPhoto');
   p.className = 'drop' + (form.photo ? ' has' : '');
   p.innerHTML = form.photo ? `<img src="${form.photo}" alt=""><span>Change photo</span><input id="photo" type="file" accept="image/*">` : `<span>📸<br>Add photo</span><input id="photo" type="file" accept="image/*">`;
-  a.className = 'drop' + (form.audio ? ' has' : '');
-  a.innerHTML = form.audio ? `<span>🎵<br>${esc(form.audioName || 'Song added')}</span><input id="audio" type="file" accept="audio/*">` : `<span>🎵<br>Add song<br><small>max 2.5 MB</small></span><input id="audio" type="file" accept="audio/*">`;
   $('#photo').onchange = async e => { const f = e.target.files[0]; if (!f) return; try { form.photo = await shrink(await readFile(f), 900, .8); drawDrops(); mini(); } catch { toast("Couldn't read that image"); } };
-  $('#audio').onchange = async e => { const f = e.target.files[0]; if (!f) return; if (f.size > MAX_AUDIO) return toast('Song too big — keep it under 2.5 MB'); form.audio = await readFile(f); form.audioName = f.name; drawDrops(); };
 }
 function collect() {
   if (!form.to.trim()) { toast('Who is this for?'); return null; }
   if (!form.msg.trim()) { toast('Write a wish first ✍️'); return null; }
   if (words(form.msg) > MAX_WORDS) { toast(`Wish is over ${MAX_WORDS} words`); return null; }
-  return { name: form.to.trim(), age: form.age ? +form.age : '', from: form.from.trim(), message: form.msg.trim(), theme: form.theme, photo: form.photo, audio: form.audio };
+  let song = null;
+  if (form.yt.trim()) {
+    const id = ytId(form.yt);
+    if (!id) { toast("That YouTube link doesn't look right"); return null; }
+    const start = toSec(form.ys), end = toSec(form.ye);
+    song = { id, start, end: end > start ? end : 0 };
+  }
+  return { name: form.to.trim(), age: form.age ? +form.age : '', from: form.from.trim(), message: form.msg.trim(), theme: form.theme, photo: form.photo, song };
 }
 
 /* ---------- saving + sharing ---------- */
@@ -154,7 +170,7 @@ function showShare(url, d, short) {
     <div class="hero"><h1 class="big">It's <em>ready.</em></h1><p class="sub">Send this to ${esc(d.name)}. Tell them to turn their sound on.</p></div>
     <div class="glass">
       <div class="linkbox"><span>${esc(url.replace(/^https?:\/\//, '').slice(0, 48))}${url.length > 60 ? '…' : ''}</span><button class="btn" id="copy">Copy</button></div>
-      ${short ? '' : '<p class="note">Short links are offline right now, so this is a long link (song not included).</p>'}
+      ${short ? '' : '<p class="note">Short links are offline right now, so this is a long link.</p>'}
       <div class="btns">
         <button class="btn" id="share">Share…</button>
         <a class="btn ghost" id="wa" target="_blank" rel="noopener">Send on WhatsApp</a>
@@ -168,11 +184,11 @@ function showShare(url, d, short) {
   $('#copy').onclick = async () => { try { await navigator.clipboard.writeText(url); toast('Link copied ✓'); } catch { prompt('Copy this link', url); } };
   $('#share').onclick = () => navigator.share ? navigator.share({ title: 'Happy Birthday!', text, url }).catch(() => { }) : $('#copy').click();
   $('#open').onclick = () => { location.href = url; if (url.includes('#')) location.reload(); };
-  $('#again').onclick = () => { Object.assign(form, { to: '', age: '', from: '', msg: '', photo: '', audio: '', audioName: '' }); showCreator(); };
+  $('#again').onclick = () => { Object.assign(form, { to: '', age: '', from: '', msg: '', photo: '', yt: '', ys: '', ye: '' }); showCreator(); };
 }
 
 /* ---------- viewer ---------- */
-function stopAudio() { if (audioEl) { audioEl.pause(); audioEl = null; } $('.music')?.remove(); }
+function stopAudio() { if (audioEl) { audioEl.pause(); audioEl = null; } if (yt) { try { yt.destroy(); } catch { } yt = null; } $('#ytHost')?.remove(); $('.music')?.remove(); }
 function showWish(d, isPreview) {
   setTheme(d.theme); stopAudio(); scrollTo(0, 0);
   app.innerHTML = `
@@ -216,12 +232,29 @@ function reveal(d, isPreview) {
   if (pol) { const box = $('.polaroid'); box.addEventListener('pointermove', e => { const r = box.getBoundingClientRect(); pol.style.setProperty('--ry', ((e.clientX - r.left) / r.width - .5) * 16 + 'deg'); pol.style.setProperty('--rx', -((e.clientY - r.top) / r.height - .5) * 16 + 'deg'); }); box.addEventListener('pointerleave', () => { pol.style.setProperty('--rx', '0deg'); pol.style.setProperty('--ry', '0deg'); }); }
   confetti(220); setTimeout(() => confetti(140, .2, .7), 500); setTimeout(() => confetti(140, .8, .7), 800); floatBalloons(16);
   if (navigator.vibrate) navigator.vibrate([40, 40, 80]);
-  if (d.audio) {
+  if (d.song && d.song.id) startSong(d.song);
+  else if (d.audio) {
     audioEl = new Audio(d.audio); audioEl.loop = true; audioEl.volume = .85;
     const btn = document.createElement('button'); btn.className = 'music'; btn.textContent = '🔊'; btn.setAttribute('aria-label', 'Toggle music'); document.body.append(btn);
     btn.onclick = () => { if (audioEl.paused) { audioEl.play(); btn.textContent = '🔊'; } else { audioEl.pause(); btn.textContent = '🔇'; } };
     audioEl.play().catch(() => { btn.textContent = '🔇'; });
   }
+}
+
+async function startSong(sg) {
+  const btn = document.createElement('button'); btn.className = 'music'; btn.textContent = '🔊'; btn.setAttribute('aria-label', 'Toggle music'); document.body.append(btn);
+  const host = document.createElement('div'); host.id = 'ytHost'; host.style.cssText = 'position:fixed;left:-9999px;top:0;width:220px;height:220px;opacity:0;pointer-events:none';
+  const slot = document.createElement('div'); host.append(slot); document.body.append(host);
+  await loadYT();
+  const vars = { autoplay: 1, controls: 0, playsinline: 1, rel: 0, disablekb: 1, start: sg.start || 0 };
+  if (sg.end && sg.end > (sg.start || 0)) vars.end = sg.end;
+  yt = new YT.Player(slot, { videoId: sg.id, playerVars: vars, events: {
+    onReady: e => { e.target.setVolume(85); e.target.playVideo(); },
+    onStateChange: e => { if (e.data === 0) { e.target.seekTo(sg.start || 0); e.target.playVideo(); } if (e.data === 1) btn.textContent = '🔊'; },
+    onError: () => btn.remove()
+  } });
+  setTimeout(() => { if (yt && yt.getPlayerState && yt.getPlayerState() !== 1) btn.textContent = '🔇'; }, 2500);
+  btn.onclick = () => { if (!yt || !yt.getPlayerState) return; if (yt.getPlayerState() === 1) { yt.pauseVideo(); btn.textContent = '🔇'; } else { yt.playVideo(); btn.textContent = '🔊'; } };
 }
 
 /* ---------- boot ---------- */
