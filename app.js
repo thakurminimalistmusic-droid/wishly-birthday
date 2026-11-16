@@ -5,12 +5,12 @@ const app = $('#app');
 const THEMES = { neon: ['Neon', '#8b5cf6'], sunset: ['Sunset', '#fb923c'], mint: ['Mint', '#34d399'], bubble: ['Bubblegum', '#f472b6'], gold: ['Gold', '#fbbf24'] };
 const MAX_WORDS = 1000;
 const form = { theme: 'neon', photo: '', audio: '', audioName: '', to: '', age: '', from: '', msg: '', yt: '', ys: '', ye: '' };
-let audioEl = null, yt = null, ytReady = null;
+let audioEl = null, yt = null, ytReady = null, ytOk = false, ytWant = false, ytBtn = null;
 
 /* ---------- helpers ---------- */
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const toastEl = $('#toast'); let tt;
-const toast = m => { toastEl.textContent = m; toastEl.classList.add('on'); clearTimeout(tt); tt = setTimeout(() => toastEl.classList.remove('on'), 2400); };
+const toast = m => { toastEl.textContent = m; toastEl.classList.add('on'); clearTimeout(tt); tt = setTimeout(() => toastEl.classList.remove('on'), 3200); };
 const words = s => (s.trim().match(/\S+/g) || []).length;
 const setTheme = t => { document.documentElement.dataset.theme = THEMES[t] ? t : 'neon'; };
 const b64u = u8 => { let s = ''; for (let i = 0; i < u8.length; i += 8192) s += String.fromCharCode(...u8.subarray(i, i + 8192)); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
@@ -188,7 +188,7 @@ function showShare(url, d, short) {
 }
 
 /* ---------- viewer ---------- */
-function stopAudio() { if (audioEl) { audioEl.pause(); audioEl = null; } if (yt) { try { yt.destroy(); } catch { } yt = null; } $('#ytHost')?.remove(); $('.music')?.remove(); }
+function stopAudio() { if (audioEl) { audioEl.pause(); audioEl = null; } if (yt) { try { yt.destroy(); } catch { } yt = null; } ytOk = false; ytWant = false; ytBtn = null; $('#ytHost')?.remove(); $('.music')?.remove(); }
 function showWish(d, isPreview) {
   setTheme(d.theme); stopAudio(); scrollTo(0, 0);
   app.innerHTML = `
@@ -208,6 +208,7 @@ function showWish(d, isPreview) {
   const out = c => {
     if (c.classList.contains('out') || opened) return;
     c.classList.add('out'); if (navigator.vibrate) navigator.vibrate(20);
+    if (d.song && d.song.id) prepSong(d.song);
     $('#cake').classList.remove('shake'); void $('#cake').offsetWidth; $('#cake').classList.add('shake');
     if (candles.every(x => x.classList.contains('out'))) { opened = true; setTimeout(() => reveal(d, isPreview), 700); }
   };
@@ -235,26 +236,38 @@ function reveal(d, isPreview) {
   if (d.song && d.song.id) startSong(d.song);
   else if (d.audio) {
     audioEl = new Audio(d.audio); audioEl.loop = true; audioEl.volume = .85;
-    const btn = document.createElement('button'); btn.className = 'music'; btn.textContent = '🔊'; btn.setAttribute('aria-label', 'Toggle music'); document.body.append(btn);
-    btn.onclick = () => { if (audioEl.paused) { audioEl.play(); btn.textContent = '🔊'; } else { audioEl.pause(); btn.textContent = '🔇'; } };
-    audioEl.play().catch(() => { btn.textContent = '🔇'; });
+    const btn = document.createElement('button'); btn.className = 'music'; btn.innerHTML = '<i></i><i></i><i></i><i></i>'; btn.dataset.on = '1'; btn.setAttribute('aria-label', 'Toggle music'); document.body.append(btn);
+    btn.onclick = () => { if (audioEl.paused) { audioEl.play(); btn.dataset.on = '1'; } else { audioEl.pause(); btn.dataset.on = '0'; } };
+    audioEl.play().catch(() => { btn.dataset.on = '0'; });
   }
 }
 
-async function startSong(sg) {
-  const btn = document.createElement('button'); btn.className = 'music'; btn.textContent = '🔊'; btn.setAttribute('aria-label', 'Toggle music'); document.body.append(btn);
-  const host = document.createElement('div'); host.id = 'ytHost'; host.style.cssText = 'position:fixed;left:-9999px;top:0;width:220px;height:220px;opacity:0;pointer-events:none';
+function prepSong(sg) {
+  if ($('#ytHost')) return;
+  const host = document.createElement('div'); host.id = 'ytHost'; host.style.cssText = 'position:fixed;left:0;top:0;width:220px;height:220px;opacity:.01;pointer-events:none;z-index:-1';
   const slot = document.createElement('div'); host.append(slot); document.body.append(host);
-  await loadYT();
-  const vars = { autoplay: 1, controls: 0, playsinline: 1, rel: 0, disablekb: 1, start: sg.start || 0 };
+  const vars = { autoplay: 0, controls: 0, playsinline: 1, rel: 0, disablekb: 1, start: sg.start || 0 };
   if (sg.end && sg.end > (sg.start || 0)) vars.end = sg.end;
-  yt = new YT.Player(slot, { videoId: sg.id, playerVars: vars, events: {
-    onReady: e => { e.target.setVolume(85); e.target.playVideo(); },
-    onStateChange: e => { if (e.data === 0) { e.target.seekTo(sg.start || 0); e.target.playVideo(); } if (e.data === 1) btn.textContent = '🔊'; },
-    onError: () => btn.remove()
-  } });
-  setTimeout(() => { if (yt && yt.getPlayerState && yt.getPlayerState() !== 1) btn.textContent = '🔇'; }, 2500);
-  btn.onclick = () => { if (!yt || !yt.getPlayerState) return; if (yt.getPlayerState() === 1) { yt.pauseVideo(); btn.textContent = '🔇'; } else { yt.playVideo(); btn.textContent = '🔊'; } };
+  loadYT().then(() => {
+    if (!host.isConnected) return;
+    yt = new YT.Player(slot, { videoId: sg.id, playerVars: vars, events: {
+      onReady: e => { ytOk = true; e.target.setVolume(85); if (ytWant) { e.target.unMute(); e.target.playVideo(); } },
+      onStateChange: e => { if (e.data === 0) { e.target.seekTo(sg.start || 0); e.target.playVideo(); } if (e.data === 1 && ytBtn) ytBtn.dataset.on = '1'; },
+      onError: e => { toast('YouTube blocked this song (' + e.data + '). Try another upload of it.'); if (ytBtn) ytBtn.remove(); }
+    } });
+  });
+}
+function startSong(sg) {
+  const btn = document.createElement('button'); btn.className = 'music'; btn.innerHTML = '<i></i><i></i><i></i><i></i>'; btn.dataset.on = '1'; btn.setAttribute('aria-label', 'Toggle music'); document.body.append(btn);
+  ytBtn = btn; ytWant = true;
+  prepSong(sg);
+  if (ytOk && yt) { yt.unMute(); yt.setVolume(85); yt.playVideo(); }
+  setTimeout(() => { if (ytBtn === btn && (!yt || !yt.getPlayerState || yt.getPlayerState() !== 1)) btn.dataset.on = '0'; }, 3000);
+  btn.onclick = () => {
+    if (!yt || !yt.getPlayerState) { toast('Song is still loading…'); return; }
+    if (yt.getPlayerState() === 1) { yt.pauseVideo(); btn.dataset.on = '0'; }
+    else { yt.unMute(); yt.setVolume(85); yt.playVideo(); btn.dataset.on = '1'; }
+  };
 }
 
 /* ---------- boot ---------- */
