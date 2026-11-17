@@ -29,12 +29,13 @@ export default async (req) => {
     .replace(/<meta property="og:description"[^>]*>/, `<meta property="og:description" content="${desc}">`)
     .replace(/<title>[^<]*<\/title>/, `<title>${title}</title>`);
   const extra = [
+    `<meta name="robots" content="noindex, nofollow">`,
     `<meta property="og:url" content="${esc(url.origin + url.pathname)}">`,
     `<meta name="twitter:card" content="${photo ? "summary_large_image" : "summary"}">`,
     photo ? `<meta property="og:image" content="${esc(url.origin)}/og/${esc(id)}.jpg">` : "",
   ].join("\n");
   html = html.replace("</head>", extra + "\n</head>");
-  return new Response(html, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "public, max-age=300" } });
+  return new Response(html, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "public, max-age=300", "x-robots-tag": "noindex, nofollow" } });
 };
 
 export const config = { path: "/w/*" };
