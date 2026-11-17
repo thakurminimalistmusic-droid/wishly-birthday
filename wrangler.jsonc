@@ -1,0 +1,16 @@
+{
+  "name": "wishly-birthday",
+  "main": "worker.js",
+  "compatibility_date": "2025-11-01",
+  "assets": {
+    "directory": ".",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*", "/w/*", "/og/*"]
+  },
+  "kv_namespaces": [
+    {
+      "binding": "WISHES",
+      "id": "719df92b04b4461199100a1ada1ecffc"
+    }
+  ]
+}
