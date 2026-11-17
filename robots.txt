@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://wishlybirthday.netlify.app/sitemap.xml
+Sitemap: https://wishly-birthday.parth100409.workers.dev/sitemap.xml
