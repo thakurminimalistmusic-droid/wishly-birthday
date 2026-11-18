@@ -28,14 +28,14 @@ async function saveWish(request, env) {
   if (wordCount(clean.message) > 1000) return json({ error: "Too many words" }, 400);
 
   const chars = "abcdefghjkmnpqrstuvwxyz23456789";
-  const id = Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => chars[b % chars.length]).join("");
+  const id = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => chars[b % chars.length]).join("");
   await env.WISHES.put(id, JSON.stringify(clean), { expirationTtl: THIRTY_DAYS });
   return json({ id });
 }
 
 async function loadWish(request, env) {
   const id = new URL(request.url).searchParams.get("id") || "";
-  if (!/^[a-z0-9]{6,12}$/i.test(id)) return json({ error: "Bad id" }, 400);
+  if (!/^[a-z0-9]{6,40}$/i.test(id)) return json({ error: "Bad id" }, 400);
   const data = await env.WISHES.get(id, "json");
   return data ? json(data) : json({ error: "Not found" }, 404);
 }
@@ -45,10 +45,10 @@ async function sharePage(request, env) {
   const id = url.pathname.split("/")[2] || "";
   let html = await (await env.ASSETS.fetch(new Request(new URL("/", url.origin)))).text();
 
-  let from = "", photo = false;
-  if (/^[a-z0-9]{6,12}$/i.test(id)) {
+  let from = "";
+  if (/^[a-z0-9]{6,40}$/i.test(id)) {
     const w = await env.WISHES.get(id, "json").catch(() => null);
-    if (w) { from = w.from || ""; photo = !!w.photo; }
+    if (w) from = w.from || "";
   }
   const who = from || "Someone";
   const pick = [...id].reduce((a, c) => a + c.charCodeAt(0), 0);
@@ -69,21 +69,10 @@ async function sharePage(request, env) {
   const extra = [
     `<meta name="robots" content="noindex, nofollow">`,
     `<meta property="og:url" content="${esc(url.origin + url.pathname)}">`,
-    `<meta name="twitter:card" content="${photo ? "summary_large_image" : "summary"}">`,
-    photo ? `<meta property="og:image" content="${esc(url.origin)}/og/${esc(id)}.jpg">` : "",
+    `<meta name="twitter:card" content="summary">`,
   ].join("\n");
   html = html.replace("</head>", extra + "\n</head>");
   return new Response(html, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "public, max-age=300", "x-robots-tag": "noindex, nofollow" } });
-}
-
-async function photoImage(request, env) {
-  const id = (new URL(request.url).pathname.split("/")[2] || "").replace(/\.jpg$/i, "");
-  if (!/^[a-z0-9]{6,12}$/i.test(id)) return new Response("Bad id", { status: 400 });
-  const w = await env.WISHES.get(id, "json").catch(() => null);
-  const m = w && /^data:(image\/[a-z+.-]+);base64,(.+)$/i.exec(w.photo || "");
-  if (!m) return new Response("Not found", { status: 404 });
-  const bytes = Uint8Array.from(atob(m[2]), (c) => c.charCodeAt(0));
-  return new Response(bytes, { headers: { "content-type": m[1], "cache-control": "public, max-age=86400" } });
 }
 
 export default {
@@ -95,7 +84,6 @@ export default {
       return json({ error: "Method not allowed" }, 405);
     }
     if (p.startsWith("/w/") && request.method === "GET") return sharePage(request, env);
-    if (p.startsWith("/og/") && request.method === "GET") return photoImage(request, env);
     return env.ASSETS.fetch(request);
   },
 };
